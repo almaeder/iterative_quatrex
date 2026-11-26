@@ -166,5 +166,8 @@ srun -n 8 python tests/nccl_probe.py                     # NCCL init, sums and e
   - ownership chunks, halos, slab domains, sharing of the contour points, LU host views
 - **daint regressions** (`tests/regression/regress.sbatch`): 2808a, 9072a, 21600a, 6 nm (4 GPUs each) and 12 nm (2 nodes,
   8 GPUs), with the options of the references in `tests/regression/ref/`. 9072a and 21600a compare with the exact T only
-  (tolerance 1e-7; N and iterations not checked). The job ends with the table and PASS / FAIL from
+  (tolerance 1e-7; N and iterations not checked).
+- **Potential sweep** (`tests/regression/sweep.sbatch`, 6 nodes): the 12 nm OFF-state device (Vb 0.2 eV, Vds 0.4 V) builds its
+  bases; the gate (Vb 0.1, 0.3, 0.0) and drain (Vds 0.1, 0.2, 0.3, 0.5) cases are solved on them with `--dV`, against the
+  development solver at Ec + 0.10, 0.25, 0.50 (`ref/12nm_off_sweep.json`; T to 1e-8 relative or 1e-12). The job ends with the table and PASS / FAIL from
   `tests/regression/compare.py` (T to 1e-8 relative, N equal, iterations at most 2 more). Install pytest with `setup_mpi.sh`.
