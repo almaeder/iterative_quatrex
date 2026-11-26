@@ -27,7 +27,7 @@ eval "$(python - $REF <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1])); a = r["args"]
 print(f"DE={','.join(r['E'])} UP={a['up']} SPLIT={a['cap_split']} MU={a['mu']} CUT={a['cut']} CAP={a['cap']} OBC={r['obc']} MAXIT={a['maxit']}")
-print(f"REFX='--Ec {r['Ec']!r} --npts {a['npts']} --eta {a['eta']} --cap-spacing {a['cap_spacing']} --cap-tov {a['cap_tov']} --halo {a['halo']} --tol {a['tol']}'")
+print(f"REFX='--Ec {r['Ec']!r} --npts {a['npts']} --eta {a['eta']} --cap-spacing {a['cap_spacing']} --cap-tov {a['cap_tov']} --halo {a['halo']} --tol {a['tol']}" + (f" --chunk {a['chunk']}" if a.get("chunk") else "") + "'")
 PY
 )"
 export DE UP SPLIT MU CUT CAP OBC MAXIT INPUTS
