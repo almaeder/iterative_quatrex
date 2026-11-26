@@ -20,7 +20,7 @@
 #SBATCH --output=qtxmg-regress-%j.out
 set -eu
 cd "$SLURM_SUBMIT_DIR"
-: "${DEV:?DEV=2808a | 6nm | 12nm}" "${INPUTS:?INPUTS=input set of the device}"
+: "${DEV:?DEV=2808a | 9072a | 21600a | 6nm | 12nm}" "${INPUTS:?INPUTS=input set of the device}"
 REF=tests/regression/ref/$DEV.json
 source scripts/daint/activate.sh
 eval "$(python - $REF <<'PY'

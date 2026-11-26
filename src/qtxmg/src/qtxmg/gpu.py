@@ -175,9 +175,6 @@ class Streamer:
         self.buf = [[cp.empty(max(b, 1), cp.uint8) for b in self.slot] for _ in range(2)]
         self.cstream = cp.cuda.Stream(non_blocking=True)
 
-    @property
-    def dev_bytes(self):
-        return 2 * sum(self.slot) if on and self.items else 0
 
     def run(self, fn):
         if not on:
@@ -215,34 +212,7 @@ class Streamer:
         self.items, self.buf = [], None
 
 
-def pin_all(arrays):
-    """Pinned host copies of a list of arrays (numpy or cupy)."""
-    return [pinned(a) for a in arrays]
-
-
-def mem_used():
-    """Bytes held by cupy's memory pool (0 on CPU)."""
-    return int(cp.get_default_memory_pool().used_bytes()) if on else 0
-
-
 _peak = [0, False]                                                   # peak of the live bytes, allocator installed
-
-
-def track_peak():
-    """Record the peak of the live bytes of cupy's memory pool (an allocator that looks at the pool after every
-    allocation). No-op on the CPU."""
-    if not on or _peak[1]:
-        return
-    pool = cp.get_default_memory_pool()
-
-    def alloc(size):
-        m = pool.malloc(size)
-        u = pool.used_bytes()
-        if u > _peak[0]:
-            _peak[0] = u
-        return m
-    cp.cuda.set_allocator(alloc)
-    _peak[0], _peak[1] = int(pool.used_bytes()), True
 
 
 def mem_mark():

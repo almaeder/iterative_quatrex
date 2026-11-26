@@ -1,4 +1,5 @@
-"""Generic transport input set: what every TB model (empirical or ab initio) hands to the solvers.
+"""Generic transport input set: what every TB model (empirical or ab initio) hands to the solvers. read_inputs also reads
+the prepared folders of qtx_modespace.prep (prep.json, see read_prepared).
 
 <dir>/device.xyz        atoms in orbital order: label x y z [A]   (labels only identify species)
 <dir>/norb.txt          orbitals per atom, one integer per line (orbitals of an atom are consecutive)
@@ -49,9 +50,41 @@ def write_inputs(out, labels, xyz, norb, blocks, H, S=None, lead=None, meta=None
     json.dump(meta or {}, open(out / "meta.json", "w"), indent=1)
 
 
-def read_inputs(d):
-    """dict(labels, xyz, norb, blocks, H, S, lead (dict or None), lead_right (dict or None), perm (or None), meta)."""
+PREP_FORMAT = 1                                                       # prepared folder of qtx_modespace.prep (prep.json)
+
+
+def read_prepared(d):
+    """The same dict from a prepared folder of qtx_modespace.prep (format 1):
+        prep.json      format, prep options, source folder (+ size / mtime of its files), meta
+        arrays.npz     labels, xyz, norb, blocks, perm
+        H.npz, S.npz   upper triangle only (H, S Hermitian), uncompressed
+        lead.npz       CSR arrays of lead_{H,S}{00,01} (+ lead_right_*)
+    Faster to read than an input set (half the nonzeros, no decompression)."""
     d = Path(d)
+    info = json.loads((d / "prep.json").read_text())
+    if info.get("format") != PREP_FORMAT:
+        raise ValueError(f"{d}: prepared-input format {info.get('format')}, this version reads {PREP_FORMAT}")
+    A = np.load(d / "arrays.npz")
+    out = {k: A[k] for k in ("labels", "xyz", "norb", "blocks", "perm")}
+    for nm in ("H", "S"):
+        U = sp.load_npz(d / f"{nm}.npz").tocsr()
+        out[nm] = (U + sp.triu(U, 1, format="csr").conj().T).tocsr()
+        del U
+    L = np.load(d / "lead.npz")
+    for pre in ("lead", "lead_right"):
+        ks = [k for k in LEAD_KEYS if f"{pre}_{k}_data" in L]
+        out[pre] = {k: sp.csr_matrix((L[f"{pre}_{k}_data"], L[f"{pre}_{k}_indices"], L[f"{pre}_{k}_indptr"]),
+                                     shape=tuple(L[f"{pre}_{k}_shape"])) for k in ks} or None
+    out["meta"] = info["meta"]
+    return out
+
+
+def read_inputs(d):
+    """dict(labels, xyz, norb, blocks, H, S, lead (dict or None), lead_right (dict or None), perm (or None), meta), from an
+    input set or from a prepared folder of qtx_modespace.prep (prep.json: read_prepared)."""
+    d = Path(d)
+    if (d / "prep.json").exists():
+        return read_prepared(d)
     with open(d / "device.xyz") as f:
         lines = f.read().splitlines()
     nat = int(lines[0].split()[0])

@@ -18,7 +18,7 @@ nccl13 = ["nvidia-nccl-cu13"]        # --dist nccl (or $QTX_NCCL = path of libnc
 
 [project.scripts]
 qtxmg = "qtxmg.single:main"
-qtxmg-multi = "qtxmg.run:main"
+qtxmg-multi = "qtxmg.hier.run:main"
 qtxmg-prep-quatrex = "qtxmg.prep.quatrex:main"
 
 [build-system]
