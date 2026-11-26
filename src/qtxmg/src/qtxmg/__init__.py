@@ -2,16 +2,16 @@
 multigrid preconditioner in flexible GMRES, on one or several GPUs.
 
     single      the single-GPU solver in one file (python -m qtxmg, or the qtxmg command)
-    run         the multi-GPU solver, one MPI rank per GPU (python -m qtxmg.run, or qtxmg-multi); one rank without --dist
-      backend     numpy / cupy switch, dense LU helpers, host-held blocks
-      comm        communicators (one rank, MPI, NCCL), distributed vectors and halos, ownership chunks, slab domains
-      device      device H, S, geometry, lead faces; S and H rows on the GPU
-      structure   contour, fine CAP-Schwarz windows, levels and their windows
-      obc         lead Sigma and injection (Beyn or folded), computed once over the ranks
-      hierarchy   bases, Galerkin blocks, smoothers, distributed block-tridiagonal LU of the deepest level, V-cycle
-      krylov      flexible GMRES on distributed vectors
-    beyn        lead self-energy and injection from the Bloch modes of the periodized lead (Beyn)
-    gpu         numpy / cupy helpers used by beyn
-    prep        input sets: prep.inputs (read / write), prep.quatrex (QuaTrEx device folder -> input set)
-"""
+    hier        the multi-GPU solver qtx_ms.hier of the development code, as it is (python -m qtxmg.hier.run, or qtxmg-multi):
+                run (driver), plan, levels, fine, obc, slow; with the parts of the development modules it uses:
+      dist        communicators (one rank, MPI, NCCL), distributed vectors and halos, ownership chunks, slab domains
+      schwarz     CAP-Schwarz fine windows, block FGMRES
+      msbasis     device, geometry, lead faces, log
+      mlevel      launcher (start, guarded)
+      devstore    sliced device store (python -m qtxmg.devstore), input reader
+      abtb        Sancho decimation
+    obc_beyn    Beyn lead self-energy and injection (single and hier)
+    gpu         numpy / cupy helpers
+    prep        input sets: prep.inputs (read / write, also qtx_modespace.prep folders), prep.quatrex (QuaTrEx folder -> input set)
+The code of the development modules that none of these reaches is removed (workflows/prune_release.py)."""
 __version__ = "0.2.0"

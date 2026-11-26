@@ -31,15 +31,13 @@ A_k  = E S_k − H_k − Y_kᵀ Σ_L Y_k − Y_kᵀ Σ_R Y_k,  S_k = U_kᵀ S_{k
 | file | content |
 |---|---|
 | `src/qtxmg/single.py` | the single-GPU solver in one file: device, OBC, fine windows, hierarchy, V-cycle, FGMRES, CLI |
-| `src/qtxmg/run.py` | the multi-GPU solver (one MPI rank per GPU; one rank without `--dist`): driver, CLI |
-| `src/qtxmg/hierarchy.py` | its hierarchy: distributed setup, smoothers, transfers, V-cycle, distributed block-tridiagonal LU (`Bottom`) |
-| `src/qtxmg/comm.py` | communicators (one rank, MPI, NCCL via ctypes), `Part` / `Halo` (distributed vectors), `chunks`, `domains`, `swap` |
-| `src/qtxmg/device.py`, `structure.py`, `obc.py`, `krylov.py`, `backend.py` | device and its rows on the GPU; contour, windows, levels; lead Σ (points dealt out to the ranks); FGMRES; numpy / cupy switch |
-| `src/qtxmg/beyn.py` | Beyn lead self-energy / injection (periodized lead, Woodbury face fixed point) |
-| `src/qtxmg/gpu.py` | numpy / cupy helpers used by `beyn` |
-| `src/qtxmg/prep/inputs.py` | input set: read / write (`device.xyz`, `norb.txt`, `blocks.txt`, `H.npz`, `S.npz`, `lead_*.npz`, `meta.json`) |
+| `src/qtxmg/hier/` | the multi-GPU solver `qtx_ms.hier` of the development code, as it is (one MPI rank per GPU; one rank without `--dist`): `run` driver and CLI, `plan` levels, windows and who needs which block, `levels` bases, Galerkin blocks, smoothers, V-cycle, bottom LU, `fine` fine operator and windows, `obc` lead Σ over the ranks, `slow` slow-mode coarse level |
+| `src/qtxmg/dist.py`, `schwarz.py`, `msbasis.py`, `mlevel.py`, `devstore.py`, `abtb.py` | the parts of the development modules that `hier` uses (communicators, halos, domains; CAP-Schwarz windows and block FGMRES; device; launcher; sliced device store; Sancho) |
+| `src/qtxmg/obc_beyn.py` | Beyn lead self-energy / injection (periodized lead, Woodbury face fixed point), for both solvers |
+| `src/qtxmg/gpu.py` | numpy / cupy helpers |
+| `src/qtxmg/prep/inputs.py` | input set: read / write (`device.xyz`, `norb.txt`, `blocks.txt`, `H.npz`, `S.npz`, `lead_*.npz`, `meta.json`); also reads the prepared folders of `qtx_modespace.prep` (`prep.json`, upper-triangle H / S: faster for large devices) |
 | `src/qtxmg/prep/quatrex.py` | QuaTrEx / deviceBuilder device folder → input set |
-| `tests/` | unit tests (pytest), `mpi_check.py` (real MPI / NCCL ranks), `regression/` (daint jobs, references, compare.py) |
+| `tests/` | unit tests (pytest), `nccl_probe.py` (NCCL over real ranks), `regression/` (daint jobs, references, compare.py) |
 | `scripts/daint/` | daint.alps: environment (`setup.sh`, `activate.sh`, `requirements.txt`; MPI / NCCL: `setup_mpi.sh`, `multinode_env.sh`, `rank.sh`), jobs (`run.sbatch`, `run_multi.sbatch`, `prep.sbatch`) |
 
 ## Install and run
@@ -98,22 +96,40 @@ N = 7335 / 4283 / 1778 per level:
 GPU memory: 5–6 GB. Beyn periodizes the lead from its outermost primitive cell (as QuaTrEx); on this device the lead cell
 is not exactly periodic, so Beyn and folded are different lead models: T differs by about 1e-3.
 
+## Potential changes on fixed bases (`--dV`)
+
+`--dV NEW.npy[,REF.npy]` (both solvers) adds a potential change, per atom or per orbital in the source order, to H as
+(dV S + S dV)/2.
+- With the default `--dV-bases reuse`, the bases and Σ of the inputs are reused from `--cache` (run once without `--dV`
+  first). The Galerkin blocks project the change into the bases.
+- dV must be 0 on the left lead face.
+- On the right face it must be a constant c (another drain bias): the right lead moves with it, and Σ_R(z) = Σ_R(z − c) of
+  the given lead.
+- `--dV-bases build` builds new bases of H + dV in an empty cache folder, as a reference.
+
+A potential that is part of the device itself belongs in the inputs: `qtxmg-prep-quatrex --potential`.
+
 ## Several GPUs
 
-`qtxmg-multi` (`python -m qtxmg.run`) takes the options of `qtxmg` plus `--dist nccl|mpi`, and runs one MPI rank per GPU:
+`qtxmg-multi` (`python -m qtxmg.hier.run`) is `qtx_ms.hier` of the development code. It runs one MPI rank per GPU
+(`--dist nccl|mpi`). Its options are those of `qtxmg`, except: `--obc` defaults to `folded` (also `beyn`, `beyn-real`,
+`closed`), Σ is cached in `--sigma-cache` and the bases in `--cache`, and `--schwarz`, `--slow`, `--bottom`, `--dev-store`
+are extra:
 
 ```
 pip install -e .[prep,gpu13,mpi,nccl13]
-mpiexec -n 4 qtxmg-multi --inputs inputs/mos2_hfo2 --dE 0.05,0.15 --cap-split 2,1 --up y:1e-5,x:1e-5 --gpu --dist nccl --cache $SCRATCH/qtxmg/dev
+mpiexec -n 4 qtxmg-multi --inputs inputs/mos2_hfo2 --dE 0.05,0.15 --cap-split 2,1 --up y:1e-5,x:1e-5 --obc beyn --gpu --dist nccl \
+    --cache $SCRATCH/qtxmg/dev --sigma-cache $SCRATCH/qtxmg/dev/sigma
 ```
 
 Distribution:
 - Level-1 blocks (fine cores) go to ranks in contiguous chunks of x positions of equal window cost. A merged block belongs
   to the owner of its first kid, and a window to the owner of its parents. Every rank holds the rows of its own blocks of
   every vector.
-- Every rank keeps the bases and Galerkin blocks of all levels in host memory, after they are computed by their owners.
-  Its GPU holds only the blocks the rank works with.
-- Σ and the injection are computed once, with the points dealt out to the ranks, and stored in the cache. The cache must be
+- The plan (`hier/plan.py`) lists once, from the structure, which bases and block pairs each rank needs (neighbours, parents,
+  lead blocks, CAP windows); each block pair is computed once, and the bases and pairs go only to the ranks that need them,
+  point to point (NCCL between the GPUs, or MPI in chunks below 2 GB).
+- Σ and the injection are computed once, with the points dealt out to the ranks, and stored in the Σ cache. The caches must be
   on a file system that all ranks see.
 - A_K⁻¹ uses a block-tridiagonal LU over domains of slabs separated by single slabs, one domain per rank. The separator
   system is factored on one rank.
@@ -136,22 +152,19 @@ Several nodes use cray-mpich of the uenv under mpi4py, and NCCL over Slingshot (
 ## Tests
 
 ```
-python -m pytest tests                                   # unit tests, CPU, ~10 s: thread ranks on a synthetic strip
-mpiexec -n 3 python tests/mpi_check.py cpu               # real MPI ranks against one rank (mpi | nccl: one GPU per rank)
+python -m pytest tests                                   # unit tests, CPU, thread ranks on a synthetic strip
+srun -n 8 python tests/nccl_probe.py                     # NCCL init, sums and exchanges over real ranks (GPUs)
 ```
 
-- **Unit tests** (`tests/test_comm.py`, `tests/test_solver.py`):
-  - ownership chunks, slab domains, halos, exchanges and sums
-  - the block-tridiagonal LU against a dense solve
-  - on one rank: T against the dense Caroli T (every channel injected) and against the single-GPU solver, and the
-    Galerkin blocks against dense products
-  - on 2–4 thread ranks: the same T and iterations as one rank, with every Σ point computed once
-  - the distributed bottom LU with separators
-  - cached bases
-  - Beyn against the folded lead
-- **daint regressions** (`tests/regression/regress.sbatch`): 2808a (4 GPUs), 6 nm (4 GPUs) and 12 nm (2 nodes, 8 GPUs),
-  with the options of the references in `tests/regression/ref/`. The job ends with the table and PASS / FAIL from
-  `tests/regression/compare.py` (T to 1e-8 relative, N equal, iterations ±2). Install pytest with `setup_mpi.sh`.
-
-Not included (see the development code): closed boundaries, potential changes on fixed bases, slow-mode
-coarse levels.
+- **Unit tests** (`tests/test_hier.py`, `tests/test_dist.py`: the tests of `qtx_ms.hier` and of the parts of `qtx_ms.dist` it
+  uses, from the development repo). The reference is the serial `hier` run, checked against the dense Caroli T; the
+  development repo also compares it with `qtx_ms.mlsolve`, which is not in the release.
+  - thread ranks (2, 3): the same T, N and iterations, every block pair and every Σ point once, the cache
+  - injection, contour slices, the bottom LU and its domains, Schwarz only, slow modes, Beyn (also on ranks), closed
+    boundaries, lead blocks, GPU (skipped without one)
+  - `--dV` (bases reused, source order, drain bias)
+  - ownership chunks, halos, slab domains, sharing of the contour points, LU host views
+- **daint regressions** (`tests/regression/regress.sbatch`): 2808a, 9072a, 21600a, 6 nm (4 GPUs each) and 12 nm (2 nodes,
+  8 GPUs), with the options of the references in `tests/regression/ref/`. 9072a and 21600a compare with the exact T only
+  (tolerance 1e-7; N and iterations not checked). The job ends with the table and PASS / FAIL from
+  `tests/regression/compare.py` (T to 1e-8 relative, N equal, iterations at most 2 more). Install pytest with `setup_mpi.sh`.

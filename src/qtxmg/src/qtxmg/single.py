@@ -30,9 +30,9 @@ import scipy.linalg as sla
 import scipy.sparse as sp
 from scipy.spatial import cKDTree
 
-try:                                          # release layout: qtxmg/{single, beyn, gpu, prep}
+try:                                          # release layout: qtxmg/{single, obc_beyn, gpu, prep}
     from . import gpu
-    from .beyn import BeynLead
+    from .obc_beyn import BeynLead
     from .prep.inputs import read_inputs
 except ImportError:                           # development layout: qtx_ms/hier/single.py
     from .. import gpu
@@ -214,6 +214,42 @@ class Device:
         self.bL, self.bR = self.faces
 
 
+def to_orbitals(V, norb, perm=None):
+    """A potential per atom or per orbital in the source order (QuaTrEx inputs/potential.npy) -> per orbital of the input set,
+    whose atoms may be reordered: perm maps orbital -> source orbital (perm.npy of prep.quatrex), whole atoms move together."""
+    V, norb = np.asarray(V, float), np.asarray(norb)
+    if perm is None:
+        perm = np.arange(int(norb.sum()))
+    if len(V) == len(norb):                                           # per atom: the source atom order from the first orbitals
+        first = perm[np.concatenate([[0], np.cumsum(norb)[:-1]])]
+        order = np.argsort(np.argsort(first))                         # input atom i = source atom order[i]
+        nq = np.empty_like(norb)
+        nq[order] = norb
+        V = np.repeat(V, nq)
+    assert len(V) == len(perm), f"potential: {len(V)} entries for {len(norb)} atoms / {len(perm)} orbitals"
+    return V[np.asarray(perm)]
+
+
+def read_dV(text, inp):
+    """--dV NEW.npy[,REF.npy] -> NEW - REF per orbital of the input set (eV)."""
+    fs = text.split(",")
+    V = np.load(fs[0]) - (np.load(fs[1]) if len(fs) > 1 else 0.0)
+    return to_orbitals(V, inp["norb"], inp.get("perm"))
+
+
+def add_potential(device, dV):
+    """H += (v S + S v) / 2 on the device (v = dV per orbital of the input set, restricted to the device). v must vanish on the
+    left lead face (Sigma_L and the injection are those of the inputs) and be constant c on the right one: the right lead moves
+    with it (another drain bias), Sigma_R'(z) = Sigma_R(z - c). Returns shift_R = -c for the OBC."""
+    v = np.asarray(dV, float)[device.dev]
+    assert not v[device.bL].any(), "dV: must be 0 on the left lead face"
+    c = v[device.bR]
+    assert np.ptp(c) == 0, "dV: must be constant on the right lead face"
+    D = sp.diags(v)
+    device.H = (device.H + 0.5 * (D @ device.S + device.S @ D)).tocsr()
+    return -float(c[0])
+
+
 # =====================================================================================================================
 # lead OBC: Sigma_L, Sigma_R and the injection, for every point at once (setup)
 # =====================================================================================================================
@@ -326,9 +362,12 @@ class OBC:
     the incoming modes; "folded": the lead cell as given, Sancho decimation, injection = the eigenchannels of Gamma_L."""
     real_eta = 1e-5
 
-    def __init__(self, device, model="beyn", cache=None, inj_tol=1e-4):
+    def __init__(self, device, model="beyn", cache=None, inj_tol=1e-4, shift_R=0.0):
+        """shift_R: the right lead and the device next to it shifted rigidly by -shift_R S (another drain bias, --dV):
+        Sigma_R'(z) = Sigma_R(z + shift_R) of the given lead, a point of its own; Sigma_L and the injection are those of z."""
         assert model in ("beyn", "folded"), model
         self.dev, self.model, self.cache, self.inj_tol = device, model, cache, inj_tol
+        self.shift = float(shift_R)
         self.S, self.B, self._leads = {}, {}, None
 
     def _make_leads(self):
@@ -378,6 +417,9 @@ class OBC:
         """Sigma at the contour points zs and at the real energies reals (E + i eta), the injection at reals."""
         t = time.time()
         pts = [(complex(z), False) for z in zs] + [(complex(z), True) for z in reals]
+        if self.shift:                                                # Sigma_R at the shifted points
+            pts += [(complex(z) + self.shift, False) for z, _ in pts]
+            log(f"obc: right lead shifted by {-self.shift:+.4f} S: Sigma_R(z) of the lead at z {self.shift:+.4f}")
         done = 0
         for z, real in pts:
             if z in self.S and (not real or z in self.B):
@@ -399,7 +441,9 @@ class OBC:
         log(f"obc: {self.model}, {len(zs)} contour and {len(reals)} real points ({done} computed), {time.time() - t:.1f} s")
 
     def __call__(self, z):
-        return self.S[complex(z)]
+        """[Sigma_L(z), Sigma_R(z + shift_R)]."""
+        z = complex(z)
+        return [self.S[z][0], self.S[z + self.shift][1]]
 
     def inject(self, z):
         return self.B[complex(z)]
@@ -407,7 +451,8 @@ class OBC:
     def drop(self, zs):
         """Forget the Sigma of the contour points (only the bases need them)."""
         for z in zs:
-            self.S.pop(complex(z), None)
+            for q in {complex(z), complex(z) + self.shift}:
+                self.S.pop(q, None)
 
 
 def contour(mu1, mu2, npts):
@@ -1093,6 +1138,12 @@ def parse(argv=None):
                    "(injection = incoming modes), or the folded lead cell with Sancho decimation (injection = Gamma_L eigenchannels)")
     p.add_argument("--inj-tol", type=float, default=1e-4, help="Gamma_L eigenvalues above this are injected [eV]")
     p.add_argument("--cache", default="", help="folder for Sigma and the bases")
+    p.add_argument("--dV", default="", help="NEW.npy[,REF.npy]: potential change per atom or orbital [eV] (NEW - REF, source order of "
+                   "the inputs) added to H as (dV S + S dV) / 2. Zero on the left lead face (Sigma_L, injection reused); constant c on the "
+                   "right face: another drain bias, Sigma_R(z) = Sigma_R of the inputs at z - c. With the default --dV-bases reuse, the "
+                   "bases of the inputs (in --cache) are kept and the Galerkin blocks project the change into them")
+    p.add_argument("--dV-bases", default="reuse", choices=["reuse", "build"], help="with --dV: reuse the bases of the inputs (they must "
+                   "be in --cache), or build new ones of H + dV (reference; --cache must not hold bases yet: they carry the tag of the inputs)")
     p.add_argument("--gpu", action="store_true")
     p.add_argument("--out", default="")
     return p.parse_args(argv)
@@ -1105,16 +1156,25 @@ def main(argv=None):
         use_gpu()
     inp = read_inputs(a.inputs)
     device = Device(inp)
+    shift = 0.0
+    if a.dV:
+        dV = read_dV(a.dV, inp)
+        shift = add_potential(device, dV)
+        log(f"dV {a.dV}: {dV.min():+.3f}..{dV.max():+.3f} eV, right lead {-shift:+.3f} eV, "
+            + ("bases of the inputs reused" if a.dV_bases == "reuse" else "new bases of H + dV"))
     Ec = inp["meta"]["edges"]["Ec_lead"] if a.Ec is None else a.Ec
     zs, dzs = contours(a.mu, a.npts, Ec)
     log(f"{os.path.basename(os.path.normpath(a.inputs))}: {device.n} orbitals, Ec {Ec:.4f} eV, faces {len(device.bL)} / {len(device.bR)}, "
         f"{'GPU ' + xp.cuda.runtime.getDeviceProperties(0)['name'].decode() if on_gpu() else 'CPU'}; contour {a.mu} ({len(zs)} points)")
-    obc = OBC(device, a.obc, os.path.join(a.cache, "obc") if a.cache else None, a.inj_tol)
+    obc = OBC(device, a.obc, os.path.join(a.cache, "obc") if a.cache else None, a.inj_tol, shift_R=shift)
     ups = [(v.split(":")[0], float(v.split(":")[1])) for v in a.up.split(",") if v]
     halos = [None if v == "all" else int(v) for v in a.halo.split(",") if v]
     h = Hierarchy(device, inp, obc, zs, dzs, tuple(float(v) for v in a.cap.split(",")), a.cap_spacing,
                   [int(v) for v in a.cap_split.split(",")] if a.cap_split else None, a.cap_tov, a.cut, ups, halos, a.cache or None)
     reals = [Ec + float(v) + 1j * a.eta for v in a.dE.split(",")]
+    if a.dV and h.have_bases() != (a.dV_bases == "reuse"):
+        raise SystemExit("--dV: the bases of the inputs are not in --cache (run without --dV first)" if a.dV_bases == "reuse" else
+                         "--dV-bases build: --cache already holds bases (of the inputs?): give another folder")
     t = time.time()
     obc.prepare([] if h.have_bases() else zs, reals)                # every Sigma and injection at once
     h.tick("sigma", t)

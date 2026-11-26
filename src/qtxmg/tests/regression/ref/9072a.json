@@ -1,0 +1,35 @@
+{
+ "device": "9072a",
+ "source": "exact T (folded lead, E + 1e-6 i, same injection channels) of qtx_ms.mlevel --exact, daint job 5448557; N and iterations not checked (first qtxmg.hier run)",
+ "Ec": 0.5043489720738834,
+ "obc": "folded",
+ "args": {
+  "mu": "-0.15,0.8",
+  "npts": 24,
+  "eta": 1e-06,
+  "cap": "16,2,2",
+  "cap_spacing": 8.0,
+  "cap_split": "2,1",
+  "cap_tov": 6.0,
+  "cut": 1e-05,
+  "up": "y:1e-5,x:1e-5",
+  "halo": "1",
+  "tol": 1e-10,
+  "maxit": 150
+ },
+ "tol": 1e-07,
+ "E": {
+  "0.1500": {
+   "T": 1.816452799923535
+  },
+  "0.3000": {
+   "T": 2.4336236525091177
+  },
+  "0.4500": {
+   "T": 8.060385851750866
+  },
+  "0.5000": {
+   "T": 7.533257068184068
+  }
+ }
+}

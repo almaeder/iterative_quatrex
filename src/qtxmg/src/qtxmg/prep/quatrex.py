@@ -24,7 +24,7 @@ Band edges from the left-lead bands around mid_gap_energy.
 
     python -m qtxmg.prep.quatrex examples/device_MoS2HfO2_2808a_29088o --out inputs/mos2_hfo2
 """
-import argparse, json, time, tomllib
+import argparse, time, tomllib
 from pathlib import Path
 import numpy as np
 import scipy.sparse as sp

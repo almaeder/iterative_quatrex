@@ -33,9 +33,9 @@ rc=0
 if [ "$NODES" -gt 1 ]; then
   source scripts/daint/multinode_env.sh
   srun -n $N -N $NODES --ntasks-per-node=$GPUS --mpi=cray_shasta --cpu-bind=none --gpu-bind=none \
-    scripts/daint/rank.sh python -u -m qtxmg.run "${ARGS[@]}" > $OUT.log 2>&1 || rc=$?
+    scripts/daint/rank.sh python -u -m qtxmg.hier.run --sigma-cache "$CACHE/sigma" "${ARGS[@]}" > $OUT.log 2>&1 || rc=$?
 else
-  $REL/.venv-daint/bin/mpiexec -launcher fork -n $N scripts/daint/rank.sh python -u -m qtxmg.run "${ARGS[@]}" > $OUT.log 2>&1 || rc=$?
+  $REL/.venv-daint/bin/mpiexec -launcher fork -n $N scripts/daint/rank.sh python -u -m qtxmg.hier.run --sigma-cache "$CACHE/sigma" "${ARGS[@]}" > $OUT.log 2>&1 || rc=$?
 fi
 kill $MON
 echo "exit $rc after $SECONDS s, GPU MiB peak $(tr ' ' '\n' < $OUT.mon | sort -n | tail -1)"
