@@ -1,0 +1,6 @@
+# setup_mpi.sh: one node (MPICH wheel, mpiexec -launcher fork) and NCCL for CUDA 13
+mpi4py==4.1.2
+mpich
+nvidia-nccl-cu13
+# the test suite (tests/: python -m pytest tests)
+pytest
