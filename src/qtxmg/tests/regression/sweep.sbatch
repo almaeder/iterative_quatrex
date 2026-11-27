@@ -4,7 +4,7 @@
 # solved with dV = V(case) - V(base) on those bases (--dV-bases reuse; drain cases: Sigma_R at z - c). T and the iterations are
 # compared with the development solver (qtx_ms.hier.run) at Ec + 0.10, 0.25, 0.50 (compare.py; T to 1e-8 relative or 1e-12).
 #   INPUTS   prep folder of the base device                  STORE   its sliced device store (optional, --dev-store)
-#   POTS     folder of <case>/inputs/potential.npy and of the base (<ref_potential>/inputs/potential.npy)
+#   POTS     folder of <dV>/inputs/potential.npy of every case (dV of the reference) and of the base (<ref_potential>)
 #   SIGMA    lead Sigma folder (default $CACHE/sigma)        CACHE   folder of the bases (a later job resumes from it)
 #   CASES    subset of the cases (default: all)             DE      energies (default: those of the reference)
 #   INPUTS=... POTS=... CACHE=... sbatch -A <account> --nodes=6 --uenv=prgenv-gnu/24.11:v1 tests/regression/sweep.sbatch
@@ -37,7 +37,8 @@ echo "sweep 12nm_off: $INPUTS, potentials $POTS, bases $CACHE, Sigma $SIGMA, ene
 rc=0
 for c in ${CASES:-$ALL}; do
   x="$REFX ${STORE:+--dev-store $STORE}"
-  [ $c = base ] || x="$x --dV $POTS/$c/inputs/potential.npy,$POTS/$PREF/inputs/potential.npy --dV-bases reuse"
+  d=$(python -c "import json, sys; print(next(c['dV'] or '' for c in json.load(open(sys.argv[1]))['cases'] if c['name'] == sys.argv[2]))" $REF $c)
+  [ -z "$d" ] || x="$x --dV $POTS/$d/inputs/potential.npy,$POTS/$PREF/inputs/potential.npy --dV-bases reuse"
   echo "=== $c"
   OUT=${O}_$c EXTRA="$x" bash scripts/daint/run_multi.sbatch > ${O}_$c.out 2>&1 || { rc=1; tail -5 ${O}_$c.out; continue; }
   python - $REF $c ${O}_$c.json <<'PY' || rc=1
