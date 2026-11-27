@@ -71,6 +71,9 @@ dependencies = [
 
     [project.scripts]
     quatrex = "quatrex.cli:run_cli"
+    qtmg = "qtmg.single:main"
+    qtmg-multi = "qtmg.hier.run:main"
+    qtmg-prep-quatrex = "qtmg.prep.quatrex:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "quatrex.__about__.__version__" }

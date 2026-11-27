@@ -1,0 +1,6 @@
+# daint.alps GH200 (aarch64), CUDA 13.2 driver (2026-11); versions tested with qtmg 0.1.0
+numpy==2.5.4
+scipy==1.18.1
+h5py==3.16.0
+cupy-cuda13x[ctk]==14.2.0
+cuda-toolkit==13.2.*

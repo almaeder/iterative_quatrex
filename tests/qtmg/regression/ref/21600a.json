@@ -1,0 +1,35 @@
+{
+ "device": "21600a",
+ "source": "exact T (folded lead, E + 1e-6 i, same injection channels) of qtx_ms.mlevel --exact, daint job 5448557; N and iterations not checked (first qtmg.hier run)",
+ "Ec": 0.5061941254450979,
+ "obc": "folded",
+ "args": {
+  "mu": "-0.15,0.8",
+  "npts": 24,
+  "eta": 1e-06,
+  "cap": "16,2,2",
+  "cap_spacing": 8.0,
+  "cap_split": "2,1",
+  "cap_tov": 6.0,
+  "cut": 1e-05,
+  "up": "y:1e-5,x:1e-5",
+  "halo": "1",
+  "tol": 1e-10,
+  "maxit": 150
+ },
+ "tol": 1e-07,
+ "E": {
+  "0.1500": {
+   "T": 0.9378768573359462
+  },
+  "0.3000": {
+   "T": 0.4825216878586994
+  },
+  "0.4500": {
+   "T": 5.952481825643048
+  },
+  "0.5000": {
+   "T": 4.51588300888843
+  }
+ }
+}
