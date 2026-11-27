@@ -2,7 +2,7 @@
 # Regression of the multi-GPU solver on daint against the references in tests/regression/ref (MoS2/HfO2 devices):
 #   2808a   22 848 orbitals,  4 GPUs (1 node), Beyn,   11 energies   (reference: qtxmg 0.1.0 single GPU = qtx_ms.hier.run)
 #   6nm    ~250 000 orbitals,  4 GPUs (1 node), folded, 8 energies    (reference: qtx_ms.hier.run, 4 GPUs)
-#   12nm    714 240 orbitals,  8 GPUs (2 nodes), Beyn,  3 energies    (reference: qtx_ms.hier.run, 8 GPUs)
+#   12nm    714 240 orbitals,  8 GPUs (2 nodes), Beyn,  3 energies    (reference: qtx_ms.hier.run, merge cuts 1e-7; 12nm_c1e-5: cuts 1e-5)
 # Options of the reference run (cuts, contour, CAP, Ec); bases and Sigma built from scratch in a fresh cache folder.
 # From the release folder, after setup.sh and setup_mpi.sh:
 #   DEV=2808a INPUTS=/path/to/mos2_hfo2     sbatch -A <account> tests/regression/regress.sbatch
